@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="pt-br">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>VR Mensal — Web</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      :root { color-scheme: light dark; }
+      .glass { background: rgba(255,255,255,.06); backdrop-filter: blur(12px); }
+    </style>
+  </head>
+  <body class="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-900 to-slate-900 text-slate-100">
+    <main class="mx-auto max-w-4xl px-4 py-14">
+      <section class="glass rounded-2xl shadow-2xl p-8 border border-white/10">
+        <div class="flex items-center justify-between gap-3">
+          <h1 class="text-2xl font-bold">VR Mensal — Gerador</h1>
+          <a class="text-xs underline text-slate-300" href="https://tailwindcss.com/docs">UI por Tailwind</a>
+        </div>
+        <p class="text-slate-300 mt-2">Este app já inclui as suas planilhas em <code>data/</code>. Você pode rodar com elas <b>sem subir nada</b> — ou trocar por outras enviando um ZIP/múltiplos .xlsx.</p>
+
+        <form id="gen-form" class="space-y-6 mt-6">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <label class="block">
+              <span class="text-sm text-slate-300">Início</span>
+              <input type="date" name="inicio" value="{{ default_inicio }}" class="mt-1 w-full rounded-xl bg-slate-800/80 border border-white/10 p-2" required>
+            </label>
+            <label class="block">
+              <span class="text-sm text-slate-300">Fim</span>
+              <input type="date" name="fim" value="{{ default_fim }}" class="mt-1 w-full rounded-xl bg-slate-800/80 border border-white/10 p-2" required>
+            </label>
+            <label class="block">
+              <span class="text-sm text-slate-300">Competência (AAAA-MM)</span>
+              <input type="text" name="competencia" value="{{ default_competencia }}" class="mt-1 w-full rounded-xl bg-slate-800/80 border border-white/10 p-2" required pattern="\d{4}-\d{2}">
+            </label>
+          </div>
+
+          <fieldset class="mt-4">
+            <legend class="text-sm text-slate-300 mb-2">Fonte das planilhas</legend>
+            <div class="grid md:grid-cols-2 gap-3">
+              <label class="flex items-center gap-2">
+                <input type="radio" name="mode" value="bundled" checked class="accent-emerald-500">
+                <span>Usar planilhas <b>incluídas</b> no projeto (data/)</span>
+              </label>
+              <label class="flex items-center gap-2">
+                <input type="radio" name="mode" value="upload" class="accent-emerald-500">
+                <span>Enviar um <b>.zip</b> com os .xlsx ou <b>múltiplos .xlsx</b></span>
+              </label>
+            </div>
+          </fieldset>
+
+          <div id="upload-area" class="hidden">
+            <div id="drop-zone" class="mt-2 flex items-center justify-center border-2 border-dashed border-white/20 rounded-2xl py-10 hover:border-indigo-400 transition">
+              <div class="text-center">
+                <p class="mb-2">Arraste e solte aqui…</p>
+                <p class="text-xs text-slate-400">ou</p>
+                <label class="mt-2 inline-block">
+                  <input id="file-input" type="file" accept=".zip,.xlsx" multiple class="hidden">
+                  <span class="cursor-pointer rounded-xl bg-indigo-500/90 hover:bg-indigo-400 px-4 py-2 font-semibold inline-flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 16l4-5h-3V4h-2v7H8l4 5z"/><path d="M20 18H4v2h16v-2z"/></svg>
+                    Selecionar arquivos
+                  </span>
+                </label>
+                <p id="files-list" class="mt-3 text-sm text-slate-300"></p>
+              </div>
+            </div>
+          </div>
+
+          <button id="btn-go" class="w-full rounded-2xl bg-emerald-500/90 hover:bg-emerald-400 py-3 font-bold disabled:opacity-50 disabled:cursor-not-allowed">
+            Gerar e baixar
+          </button>
+          <div id="status" class="text-sm text-slate-300"></div>
+        </form>
+      </section>
+
+      <footer class="mt-8 text-center text-xs text-slate-400">
+        Pronto para nuvem (Dockerfile + Procfile). Dica: Render / Railway.
+      </footer>
+    </main>
+
+    <script>
+      const form = document.getElementById('gen-form');
+      const btn = document.getElementById('btn-go');
+      const statusEl = document.getElementById('status');
+      const uploadArea = document.getElementById('upload-area');
+      const fileInput = document.getElementById('file-input');
+      const filesList = document.getElementById('files-list');
+      const dropZone = document.getElementById('drop-zone');
+
+      function updateMode() {
+        const mode = new FormData(form).get('mode');
+        uploadArea.classList.toggle('hidden', mode !== 'upload');
+      }
+      form.addEventListener('change', updateMode);
+      updateMode();
+
+      function updateList(files) {
+        filesList.textContent = files.length ? Array.from(files).map(f => f.name).join(' | ') : '';
+      }
+      if (dropZone) {
+        dropZone.addEventListener('click', () => fileInput.click());
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('border-indigo-400'); });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('border-indigo-400'));
+        dropZone.addEventListener('drop', (e) => { e.preventDefault(); dropZone.classList.remove('border-indigo-400'); fileInput.files = e.dataTransfer.files; updateList(fileInput.files); });
+      }
+      if (fileInput) fileInput.addEventListener('change', () => updateList(fileInput.files));
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        statusEl.textContent = 'Processando…';
+        btn.disabled = true;
+        try {
+          const fd = new FormData(form);
+          const mode = fd.get('mode') || 'bundled';
+          if (mode === 'upload') {
+            const files = fileInput.files || [];
+            if (!files.length) throw new Error('Selecione um ZIP com os .xlsx ou múltiplos .xlsx');
+            for (const f of files) fd.append('files', f);
+          }
+          const resp = await fetch('/api/generate', { method: 'POST', body: fd });
+          if (!resp.ok) throw new Error(await resp.text() || 'Falha inesperada');
+          const blob = await resp.blob();
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = 'resultados.zip';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          statusEl.textContent = 'Arquivo gerado com sucesso.';
+        } catch (err) { statusEl.textContent = 'Erro: ' + (err?.message || err); }
+        finally { btn.disabled = false; }
+      });
+    </script>
+  </body>
+</html>
